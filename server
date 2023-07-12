@@ -44,10 +44,21 @@ function ip() {
 add_function bootstrap name "Bootstrap a remote server"
 function bootstrap() {
     bash thorsh inline bootstrap
+    bash thorsh inline dns
     scp bootstrap.inlined root@$(ip):/root/bootstrap
     ssh root@$(ip) bash bootstrap bootstrap
     scp deployer root@$(ip):/root/deployer
+    scp dns.inlined root@$(ip):/root/dns
+    ssh root@$(ip) "chmod +x deployer dns;mv deployer dns ~deploy"
+    $DIR/dns export_env | ssh root@$(ip) "cat > ~deploy/.env;chmod 600 ~deploy/.env;chown deploy ~deploy/.env"
+    rm dns.inlined bootstrap.inlined
+}
+
+add_function update_deployer name "Update the deployer on a remote server"
+function update_deployer {
+    scp deployer root@$(ip):/root/deployer
     ssh root@$(ip) "chmod +x deployer;mv deployer ~deploy"
 }
+    
 
 thorsh "$@"

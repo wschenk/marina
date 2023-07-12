@@ -25,7 +25,7 @@ function unattended_upgrades() {
     echo
     
     echo ---------- Setup unattended-upgrades
-    apt install -y unattended-upgrades jq jo
+    apt install -y unattended-upgrades jq jo git
     echo ---------- Done unattended-upgrades
     echo
 

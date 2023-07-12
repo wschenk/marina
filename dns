@@ -7,12 +7,18 @@ if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
 cmd="usage"
 zone="willschenk.com"
 
-if ! lpass status; then
-  echo Please log in
-  LPASS_DISABLE_PINENTRY=1 lpass login wschenk@gmail.com
+if [[ -f .env ]]; then
+    . .env
 fi
 
-CF_TOKEN=$(lpass show "cloudflare token" | awk '/Notes/ {print $2}')
+if [[ -z "${CF_TOKEN:0}" ]]; then
+    if ! lpass status > /dev/null; then
+        echo Please log in
+        LPASS_DISABLE_PINENTRY=1 lpass login wschenk@gmail.com
+    fi
+
+    CF_TOKEN=$(lpass show "cloudflare token" | awk '/Notes/ {print $2}')
+fi
 
 add_function list "List all dns records in the zone"
 function list() {
@@ -100,6 +106,11 @@ function rm_name {
              -H  "Authorization: Bearer ${CF_TOKEN}" | \
             jq
     fi
+}
+
+add_function export_env "prints out the CF_TOKEN"
+function export_env {
+    echo export CF_TOKEN=${CF_TOKEN}
 }
 
 thorsh "$@"
