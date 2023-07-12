@@ -1,0 +1,53 @@
+#!/bin/bash
+
+DIR="${BASH_SOURCE%/*}"
+if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
+. "$DIR/thorsh"
+
+add_value server_type=cx11 "default server type"
+add_value image=debian-12 "default image"
+
+add_function list "List out all of the server"
+function list() {
+    hcloud server list
+}
+
+add_function ssh_key "Find the key to the ssh_key"
+function ssh_key() {
+    hcloud ssh-key list -o noheader | awk '{print $1}'
+}
+
+add_function add name "Create a new server"
+function add() {
+    hcloud server create --name $name --type ${server_type} --image ${image} --ssh-key $(ssh_key)
+}
+
+add_function rm_server name "Remove a server"
+function rm_server() {
+    server_id=$(hcloud server list -o noheader | awk "/${name}/ {print \$1}")
+
+    if [[ -z "${server_id}" ]]; then 
+       echo $name not found
+       exit 1
+    fi
+
+    hcloud server delete ${server_id}
+
+    list
+}
+
+add_function ip name "Find the ip address of a server"
+function ip() {
+    hcloud server list -o noheader | awk "/${name}/ {print \$4}"
+}
+
+add_function bootstrap name "Bootstrap a remote server"
+function bootstrap() {
+    bash thorsh inline bootstrap
+    scp bootstrap.inlined root@$(ip):/root/bootstrap
+    ssh root@$(ip) bash bootstrap bootstrap
+    scp deployer root@$(ip):/root/deployer
+    ssh root@$(ip) "chmod +x deployer;mv deployer ~deploy"
+}
+
+thorsh "$@"

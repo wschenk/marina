@@ -1,0 +1,105 @@
+#!/bin/bash
+
+DIR="${BASH_SOURCE%/*}"
+if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
+. "$DIR/thorsh"
+
+cmd="usage"
+zone="willschenk.com"
+
+if ! lpass status; then
+  echo Please log in
+  LPASS_DISABLE_PINENTRY=1 lpass login wschenk@gmail.com
+fi
+
+CF_TOKEN=$(lpass show "cloudflare token" | awk '/Notes/ {print $2}')
+
+add_function list "List all dns records in the zone"
+function list() {
+    curl -s -X GET \
+         https://api.cloudflare.com/client/v4/zones/$(list_zone)/dns_records \
+         -H 'Content-Type: application/json' \
+         -H  "Authorization: Bearer ${CF_TOKEN}" | \
+        jq -r '{"result"}[] | .[] | "\(.id) \(.type) \(.name) \(.content)"'
+}
+
+add_function list_zones "List all dns records in the zone"
+function list_zones() {
+    curl -s -X GET \
+         https://api.cloudflare.com/client/v4/zones \
+         -H "Authorization: Bearer ${CF_TOKEN}" \
+         -H 'Content-Type: application/json' | \
+        jq -r '{"result"}[] | .[] | .id + " " + .name + " " + .status'
+}
+
+add_function list_zone "Get the zone id"
+function list_zone {
+    curl -s -X GET \
+         "https://api.cloudflare.com/client/v4/zones?name=${zone}&status=active" \
+         -H "Authorization: Bearer ${CF_TOKEN}" \
+         -H "Content-Type:application/json" | jq -r '{"result"}[] | .[0] | .id'
+}
+
+add_function add_name name ip "Adds a record pointing to ip"
+function add_name {
+    local zone_id=$(list_zone)
+    local record="${name}.${zone}"
+
+    echo Checking to see if ${record} already is set
+    RECORD_ID=$(
+        curl -X GET \
+             https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records?name=${record} \
+             -H 'Content-Type: application/json' \
+             -H  "Authorization: Bearer ${CF_TOKEN}" | \
+            jq -r '{"result"}[] | .[0] | .id')
+
+    if [[ $RECORD_ID == 'null' ]]; then
+        echo Creating ${record}
+        jo type=A name=${record} content=${ip} ttl=1 proxied=false | \
+            curl -X POST \
+                 https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records \
+                 -d @- \
+                 -H 'Content-Type: application/json' \
+                 -H  "Authorization: Bearer ${CF_TOKEN}" | \
+            jq
+    else
+      echo Updating $RECORD_ID
+      jo type=A name=${record} content=${ip} ttl=1 proxied=false | \
+          curl -X PUT \
+               "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${RECORD_ID}" \
+               -d @- \
+               -H 'Content-Type: application/json' \
+               -H  "Authorization: Bearer ${CF_TOKEN}" | \
+          jq
+    fi
+}
+
+add_function rm_name name "Removes a name"
+function rm_name {
+    ZONE_ID=$(list_zone)
+    RECORD="${name}.${zone}"
+
+    echo Removing dns ${RECORD}
+
+    RECORD_ID=$(
+        curl -X GET \
+             https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records?name=${RECORD} \
+             -H 'Content-Type: application/json' \
+             -H  "Authorization: Bearer ${CF_TOKEN}" | \
+            jq -r '{"result"}[] | .[0] | .id')
+    
+    if [[ $RECORD_ID == 'null' ]]; then
+        echo ${RECORD} doesn\'t exist!
+    else
+        echo Deleting $RECORD_ID
+        
+        curl -X DELETE \
+             "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${RECORD_ID}" \
+             -d @- \
+             -H 'Content-Type: application/json' \
+             -H  "Authorization: Bearer ${CF_TOKEN}" | \
+            jq
+    fi
+}
+
+thorsh "$@"

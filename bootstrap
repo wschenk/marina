@@ -1,0 +1,152 @@
+#!/bin/bash
+
+if [[ ! "$(uname -s)" == "Linux" ]]; then
+    echo Not on linux
+    exit 1
+fi
+
+DIR="${BASH_SOURCE%/*}"
+if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
+. "$DIR/thorsh"
+
+add_function bootstrap "Do everything"
+function bootstrap() {
+    unattended_upgrades
+    check_docker
+    user
+    proxy
+}
+
+add_function unattended_upgrades "Turns on unattended upgrades"
+function unattended_upgrades() {
+    echo Upgrade package list
+    apt update -y && apt upgrade -y
+    echo Done Upgrade Package list
+    echo
+    
+    echo ---------- Setup unattended-upgrades
+    apt install -y unattended-upgrades jq jo
+    echo ---------- Done unattended-upgrades
+    echo
+
+    echo ---------- Enable unattended-upgrades
+    systemctl enable unattended-upgrades
+    systemctl start unattended-upgrades
+    echo ---------- Done enable unattended-upgrades
+    echo
+    
+    echo ---------- Enable auto-upgrades
+    cat > /etc/apt/apt.conf.d/20auto-upgrades <<EOF
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+EOF
+    echo ---------- Done auto-upgrades
+    echo
+}
+
+add_function check_docker "Makes sure that docker is installed"
+function check_docker() {
+    echo ---------- Checking for docker
+    if docker -v 2>/dev/null; then
+        echo Installed
+    else
+        echo ---------- Installing for docker
+        curl -sSL https://get.docker.com | sh
+    fi
+    echo ---------- Done
+    echo
+}
+
+add_function user "Creates user"
+function user() {
+    username=deploy
+    echo ---------- Making sure ${username} is working
+    if ! grep ${username} /etc/passwd; then
+        echo ${username} not found, creating
+        useradd ${username} -m -g docker -s /bin/bash
+    fi
+
+    echo ---------- Setting up .ssh
+
+    mkdir -p /home/${username}/.ssh
+    echo command=\"/home/${username}/deployer admin\",no-port-forwarding,\
+no-X11-forwarding,no-agent-forwarding,no-pty \
+$(head -1 /root/.ssh/authorized_keys) > /home/${username}/.ssh/authorized_keys
+
+#    cp /root/.ssh/authorized_keys /home/${username}/.ssh/authorized_keys
+    chown -R ${username} /home/${username}
+    chmod 700 /home/${username}/.ssh
+    chmod 600 /home/${username}/.ssh/authorized_keys
+
+    echo ---------- Done .ssh
+
+    echo ---------- Adding /etc/sudoers.d/${username}
+    cat > /etc/sudoers.d/${username} <<EOF
+${username} ALL=(ALL) NOPASSWD:ALL
+EOF
+    echo ---------- Done /etc/sudoers.d/${username}
+
+    echo ---------- Done ${username}
+    echo
+}
+
+add_function proxy "Starts the proxy"
+function proxy() {
+    echo ---------- Starting the proxy
+
+    echo ---------- Checking for caddy network
+    if [[ $(docker network ls -f name=caddy -q | wc -l) != "1" ]]; then
+        echo ---------- Creating caddy network
+        docker network create caddy
+    fi
+        
+    echo ---------- Checking for caddy_data
+    if [[ $(docker volume ls -f name=caddy_data -q | wc -l) != "1" ]]; then
+        echo ---------- Creating caddy_data
+        docker volume create caddy_data
+    fi
+
+    echo ---------- Checking for caddy_config
+    if [[ $(docker volume ls -f name=caddy_config -q | wc -l) != "1" ]]; then
+        echo ---------- Creating caddy_config
+        docker volume create caddy_config
+    fi
+
+    echo ---------- Checking for caddy container
+    status=$(
+        docker container ls -a --format json | \
+            jq -r '. | select( .Names | contains( "caddy" )) | .State')
+
+    if [[ -z "${status}" ]]; then
+        echo ---------- Creating
+
+        docker run \
+               --detach \
+               --name caddy \
+               --network caddy \
+               --publish 80:80 \
+               --publish 443:443 \
+               --publish 443:443/udp \
+               --label caddy.email=wschenk@gmail.com \
+               --env CADDY_INGRESS_NETWORKS=caddy \
+               --volume /var/run/docker.sock:/var/run/docker.sock \
+               --volume caddy_data:/data \
+               --volume caddy_config:/config \
+               lucaslorentz/caddy-docker-proxy:ci-alpine
+    fi
+    
+    if [[ "${status}" != "running" ]]; then
+        echo trying to restart container
+        docker start caddy
+    fi
+    echo ---------- Done starting the proxy
+
+
+    echo 
+}
+
+#### Important!
+
+thorsh "$@"
+

@@ -1,0 +1,39 @@
+#!/bin/bash
+
+date >> ~/log
+echo Called with $@ >> ~/log
+
+if [ -z "${SSH_ORIGINAL_COMMAND}" ]; then
+    echo Hello there\!
+    echo It looks like you are trying to ssh in directly
+    
+    cat ~/log
+    
+    exit 0
+fi
+
+read -a strarr <<< $SSH_ORIGINAL_COMMAND
+git_cmd=${strarr[0]}
+repo=$(echo ${strarr[1]} | sed s/\'//g | sed s/\.git//)
+
+echo git cmd = ${git_cmd} >> ~/log
+echo repository = ${repo} >> ~/log
+
+repodir=$HOME/repositories/${repo}.git
+
+if [ ! -d ${repodir} ]; then
+    echo Creating ${repodir} >> ~/log
+    mkdir -p ${repodir} >> ~/log
+    
+    cd ${repodir} >> ~/log
+    
+    echo Creating bare repo >> ~/log
+    git init --bare >> ~/log
+fi
+
+echo cd $HOME/repositories/ >> ~/log
+cd $HOME/repositories/ 
+
+echo Running "${git_cmd} ${repodir}" >> ~/log
+
+${git_cmd} ${repodir} 2>> ~/log

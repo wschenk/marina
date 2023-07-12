@@ -1,0 +1,19 @@
+#!/bin/bash
+
+DIR="${BASH_SOURCE%/*}"
+if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
+. "$DIR/thorsh"
+
+# Usage
+# add_flag name "Description"
+# add_value name=default "Add a value setter"
+# add_function name arg1 arg2 argM "Usage string"
+#
+
+
+# Put your code here
+
+#### Important!
+
+thorsh "$@"
+

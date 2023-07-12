@@ -1,0 +1,53 @@
+#!/bin/bash
+
+DIR="${BASH_SOURCE%/*}"
+if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
+. "$DIR/thorsh"
+
+cmd="usage"
+
+add_function servers "List all of the servers"
+function servers() {
+    $DIR/server list
+}
+
+add_function names server "List all of names of a server"
+function names() {
+    ip=$($DIR/server ip ${server})
+    if [[ -z "$ip" ]] ; then
+        echo $server not found!
+        exit 1
+    fi
+    $DIR/dns list | awk "/$($DIR/server ip ${server})/ {print \$3}"
+}
+
+add_function create_server name "Create a new server and bootstrap it"
+function create_server() {
+    ip=$($DIR/server ip ${name})
+    if [[ -z "$ip" ]]; then
+        echo Creating ${name}
+        $DIR/server add ${name}
+    else
+        echo ${name} already existing
+    fi
+    
+    $DIR/dns add_name ${name} $($DIR/server ip ${name})
+    $DIR/server bootstrap ${name}
+}
+
+add_function nuke_server server "Removes the server and all dns records pointing to it"
+function nuke_server() {
+    echo Nuking ${server}
+
+    names 
+    exit
+
+    for name in $(names); do
+        $DIR/dns rm_name ${name}
+    done
+
+    $DIR/server rm_server ${server}
+}
+
+
+thorsh "$@"
