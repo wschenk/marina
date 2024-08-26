@@ -27,20 +27,19 @@ function create_server() {
     if [[ -z "$ip" ]]; then
         echo Creating ${name}
         $DIR/server add ${name}
+        echo Waiting 5 seconds for server to come on line
+        sleep 5
     else
         echo ${name} already existing
     fi
     
     $DIR/dns add_name ${name} $($DIR/server ip ${name})
-    $DIR/server bootstrap ${name}
+    bootstrap
 }
 
 add_function nuke_server server "Removes the server and all dns records pointing to it"
 function nuke_server() {
     echo Nuking ${server}
-
-    names 
-    exit
 
     for name in $(names); do
         $DIR/dns rm_name ${name}
@@ -49,5 +48,28 @@ function nuke_server() {
     $DIR/server rm_server ${server}
 }
 
+
+add_function bootstrap name "Bootstrap a remote server"
+function bootstrap() {
+    ip=$($DIR/server ip ${name})
+    (
+        cd $DIR
+        bash thorsh inline bootstrap
+        bash thorsh inline dns
+        scp bootstrap.inlined root@${ip}:/root/bootstrap
+        ssh root@${ip} bash bootstrap bootstrap
+        update_deployer
+    )
+}
+
+add_function update_deployer name "Update the deployer on a remote server"
+function update_deployer {
+    (
+        cd $DIR
+        ip=$($DIR/server ip ${name})
+        scp deployer post-receive root@${ip}:/root/
+        ssh root@${ip} "chmod +x deployer post-receive;mv deployer post-receive ~deploy"
+    )
+}
 
 thorsh "$@"

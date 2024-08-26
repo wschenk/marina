@@ -6,10 +6,16 @@ if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
 
 add_value server_type=cx11 "default server type"
 add_value image=debian-12 "default image"
+add_flag quiet "no headers"
 
 add_function list "List out all of the server"
 function list() {
-    hcloud server list
+    local arg=""
+    if [[ $quiet == 'true' ]]; then
+        arg="-o=noheader"
+    fi
+    
+    hcloud server list $arg
 }
 
 add_function ssh_key "Find the key to the ssh_key"
@@ -40,25 +46,5 @@ add_function ip name "Find the ip address of a server"
 function ip() {
     hcloud server list -o noheader | awk "/${name}/ {print \$4}"
 }
-
-add_function bootstrap name "Bootstrap a remote server"
-function bootstrap() {
-    bash thorsh inline bootstrap
-    bash thorsh inline dns
-    scp bootstrap.inlined root@$(ip):/root/bootstrap
-    ssh root@$(ip) bash bootstrap bootstrap
-    scp deployer root@$(ip):/root/deployer
-    scp dns.inlined root@$(ip):/root/dns
-    ssh root@$(ip) "chmod +x deployer dns;mv deployer dns ~deploy"
-    $DIR/dns export_env | ssh root@$(ip) "cat > ~deploy/.env;chmod 600 ~deploy/.env;chown deploy ~deploy/.env"
-    rm dns.inlined bootstrap.inlined
-}
-
-add_function update_deployer name "Update the deployer on a remote server"
-function update_deployer {
-    scp deployer root@$(ip):/root/deployer
-    ssh root@$(ip) "chmod +x deployer;mv deployer ~deploy"
-}
-    
 
 thorsh "$@"

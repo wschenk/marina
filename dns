@@ -51,9 +51,13 @@ function add_name {
     local zone_id=$(list_zone)
     local record="${name}.${zone}"
 
+    if [[ "${name}" == *"${zone}"* ]]; then
+        RECORD=${name}
+    fi
+
     echo Checking to see if ${record} already is set
     RECORD_ID=$(
-        curl -X GET \
+        curl -s -X GET \
              https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records?name=${record} \
              -H 'Content-Type: application/json' \
              -H  "Authorization: Bearer ${CF_TOKEN}" | \
@@ -62,7 +66,7 @@ function add_name {
     if [[ $RECORD_ID == 'null' ]]; then
         echo Creating ${record}
         jo type=A name=${record} content=${ip} ttl=1 proxied=false | \
-            curl -X POST \
+            curl -s -X POST \
                  https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records \
                  -d @- \
                  -H 'Content-Type: application/json' \
@@ -71,7 +75,7 @@ function add_name {
     else
       echo Updating $RECORD_ID
       jo type=A name=${record} content=${ip} ttl=1 proxied=false | \
-          curl -X PUT \
+          curl -s -X PUT \
                "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${RECORD_ID}" \
                -d @- \
                -H 'Content-Type: application/json' \
@@ -85,10 +89,14 @@ function rm_name {
     ZONE_ID=$(list_zone)
     RECORD="${name}.${zone}"
 
+    if [[ "${name}" == *"${zone}"* ]]; then
+        RECORD=${name}
+    fi
+
     echo Removing dns ${RECORD}
 
     RECORD_ID=$(
-        curl -X GET \
+        curl -s -X GET \
              https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records?name=${RECORD} \
              -H 'Content-Type: application/json' \
              -H  "Authorization: Bearer ${CF_TOKEN}" | \
@@ -99,9 +107,8 @@ function rm_name {
     else
         echo Deleting $RECORD_ID
         
-        curl -X DELETE \
+        curl -s -X DELETE \
              "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${RECORD_ID}" \
-             -d @- \
              -H 'Content-Type: application/json' \
              -H  "Authorization: Bearer ${CF_TOKEN}" | \
             jq
@@ -111,6 +118,11 @@ function rm_name {
 add_function export_env "prints out the CF_TOKEN"
 function export_env {
     echo export CF_TOKEN=${CF_TOKEN}
+}
+
+add_function dash "opens up the dashboard"
+function dash {
+    open "https://dash.cloudflare.com/7aeff3cfb8ab2a72637c30fb0c61d5e1/willschenk.com/dns/records"
 }
 
 thorsh "$@"

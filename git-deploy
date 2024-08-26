@@ -1,0 +1,94 @@
+#!/bin/bash
+
+DIR="${BASH_SOURCE%/*}"
+if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
+. "$DIR/thorsh"
+
+function parse_remote {
+    IFS=' ' read host site <<< \
+         $(git remote -v | \
+               grep production | \
+               head -1 | \
+               sed 's/.*@//' | \
+               sed 's/ .*//' | \
+               tr ':' ' ')
+}
+
+add_function deploy "Pushes build"
+default_cmd deploy
+function deploy {
+    echo Running the deploy command
+    parse_remote
+}
+
+add_function env "Copies over the environment"
+function env {
+    parse_remote
+
+    if [[ -z "${site:-}" ]]; then
+        echo git remote production not set
+        exit 1
+    fi
+    
+    if [[ -f .env.production ]]; then
+        echo Copying .env.production to ${host}
+        scp .env.production deploy@${host}:${site}/config
+    elif [[ -f .env ]]; then
+        echo Copying .env to ${host}
+        scp .env deploy@${host}:${site}/config
+    fi
+
+    restart
+}
+
+add_function restart "Restarts the container"
+function restart {
+    parse_remote
+    ssh deploy@${host} restart $site
+}
+
+add_function push_empty "Creates an empty commit and pushes"
+function push_empty {
+    git commit --allow-empty -m "Empty-Commit"
+    git push production main
+}
+
+add_function setup url "Setup a new deployment on host with on a url"
+function setup {
+    local server_name
+    
+    echo Looking up remote
+    local remote=$(git remote | grep production)
+    if [[ -z "${remote}" ]]; then
+        echo No production remote exists.
+
+        local servers=$($DIR/server list --quiet | awk '{print $2}' | xargs echo)
+
+        if [[ -z "${servers:-}" ]]; then
+            echo No server found
+
+            echo -n "Server name: "
+            read server_name
+
+            $DIR/marina create_server ${server_name}
+        else
+            echo Select which server to deploy on
+            select server in ${servers}; do
+                server_name=${server}
+                break;
+            done
+        fi
+        git remote add production deploy@${server_name}.willschenk.com:${url}.willschenk.com
+    fi
+
+    echo Updating dns
+    local server_name=$(git remote -v | grep production | head -1 | sed 's/.*@//' | sed 's/\..*//')
+    $DIR/dns add_name ${url} $($DIR/server ip ${server_name}) > /dev/null
+
+    git push production main
+}
+
+#### Important!
+
+thorsh "$@"
+
